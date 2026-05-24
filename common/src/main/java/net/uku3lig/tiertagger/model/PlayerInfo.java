@@ -1,42 +1,44 @@
 package net.uku3lig.tiertagger.model;
 
 import com.google.gson.annotations.SerializedName;
-import com.google.gson.reflect.TypeToken;
 import net.uku3lig.tiertagger.TierCache;
 import net.uku3lig.tiertagger.TierTagger;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import org.jetbrains.annotations.Nullable;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 
-public record PlayerInfo(String uuid, String name, Map<String, Ranking> rankings, String region, int points,
-                         int overall, List<Badge> badges, @SerializedName("combat_master") boolean combatMaster) {
-    public record Ranking(int tier, int pos, @Nullable @SerializedName("peak_tier") Integer peakTier,
-                          @Nullable @SerializedName("peak_pos") Integer peakPos, long attained,
-                          boolean retired) {
+public record PlayerInfo(
+        String uuid,
+        String name,
+        Map<String, Ranking> rankings,
+        String region,
+        int points,
+        int overall,
+        List<Badge> badges,
+        @SerializedName("combat_master") boolean combatMaster
+) {
 
-        /**
-         * Lower is better.
-         */
+    public record Ranking(
+            int tier,
+            int pos,
+            @Nullable @SerializedName("peak_tier") Integer peakTier,
+            @Nullable @SerializedName("peak_pos") Integer peakPos,
+            long attained,
+            boolean retired
+    ) {
+
         public int comparableTier() {
             return tier * 2 + pos;
         }
 
-        /**
-         * Lower is better.
-         */
         public int comparablePeak() {
             if (peakTier == null || peakPos == null) {
                 return Integer.MAX_VALUE;
-            } else {
-                return peakTier * 2 + peakPos;
             }
+            return peakTier * 2 + peakPos;
         }
 
         public NamedRanking asNamed(GameMode mode) {
@@ -44,11 +46,9 @@ public record PlayerInfo(String uuid, String name, Map<String, Ranking> rankings
         }
     }
 
-    public record NamedRanking(@Nullable GameMode mode, Ranking ranking) {
-    }
+    public record NamedRanking(@Nullable GameMode mode, Ranking ranking) {}
 
-    public record Badge(String title, String desc) {
-    }
+    public record Badge(String title, String desc) {}
 
     private static final Map<String, Integer> REGION_COLORS = Map.of(
             "NA", 0xff6a6e,
@@ -60,41 +60,26 @@ public record PlayerInfo(String uuid, String name, Map<String, Ranking> rankings
             "AF", 0x674ea7
     );
 
-    public static CompletableFuture<PlayerInfo> get(HttpClient client, UUID uuid) {
-        String endpoint = TierTagger.getManager().getConfig().getApiUrl() + "/v2/profile/" + uuid;
-        final HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint)).GET().build();
+    // ----------------------------
+    // ❌ OLD API METHODS REMOVED
+    // ----------------------------
 
-        return client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                .thenApply(HttpResponse::body)
-                .thenApply(s -> TierTagger.GSON.fromJson(s, PlayerInfo.class))
-                .whenComplete((_, t) -> {
-                    if (t != null) TierTagger.getLogger().warn("Error getting player info ({})", uuid, t);
-                });
+    public static CompletableFuture<PlayerInfo> get(HttpClient client, UUID uuid) {
+        throw new UnsupportedOperationException("PrimeTiers mode does not use API get()");
     }
 
     public static CompletableFuture<Map<String, Ranking>> getRankings(HttpClient client, UUID uuid) {
-        String endpoint = TierTagger.getManager().getConfig().getApiUrl() + "/v2/profile/" + uuid + "/rankings";
-        final HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint)).GET().build();
-
-        return client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                .thenApply(HttpResponse::body)
-                .thenApply(s -> TierTagger.GSON.fromJson(s, new TypeToken<Map<String, Ranking>>() {}))
-                .whenComplete((_, t) -> {
-                    if (t != null) TierTagger.getLogger().warn("Error getting player rankings ({})", uuid, t);
-                });
+        return CompletableFuture.completedFuture(
+                TierCache.getPlayerRankings(uuid)
+                        .orElse(Collections.emptyMap())
+        );
     }
 
     public static CompletableFuture<PlayerInfo> search(HttpClient client, String query) {
-        String endpoint = TierTagger.getManager().getConfig().getApiUrl() + "/v2/profile/by-name/" + query;
-        final HttpRequest request = HttpRequest.newBuilder(URI.create(endpoint)).GET().build();
-
-        return client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                .thenApply(HttpResponse::body)
-                .thenApply(s -> TierTagger.GSON.fromJson(s, PlayerInfo.class))
-                .whenComplete((_, t) -> {
-                    if (t != null) TierTagger.getLogger().warn("Error searching player {}", query, t);
-                });
+        return TierCache.searchPlayer(query);
     }
+
+    // ----------------------------
 
     public int getRegionColor() {
         return REGION_COLORS.getOrDefault(this.region.toUpperCase(Locale.ROOT), 0xffffff);
@@ -125,33 +110,28 @@ public record PlayerInfo(String uuid, String name, Map<String, Ranking> rankings
     }
 
     public PointInfo getPointInfo() {
-        if (this.points >= 400) {
-            return PointInfo.COMBAT_GRANDMASTER;
-        } else if (this.points >= 250) {
-            return PointInfo.COMBAT_MASTER;
-        } else if (this.points >= 100) {
-            return PointInfo.COMBAT_ACE;
-        } else if (this.points >= 50) {
-            return PointInfo.COMBAT_SPECIALIST;
-        } else if (this.points >= 20) {
-            return PointInfo.COMBAT_CADET;
-        } else if (this.points >= 10) {
-            return PointInfo.COMBAT_NOVICE;
-        } else if (this.points >= 1) {
-            return PointInfo.ROOKIE;
-        } else {
-            return PointInfo.UNRANKED;
-        }
+        if (this.points >= 400) return PointInfo.COMBAT_GRANDMASTER;
+        if (this.points >= 250) return PointInfo.COMBAT_MASTER;
+        if (this.points >= 100) return PointInfo.COMBAT_ACE;
+        if (this.points >= 50) return PointInfo.COMBAT_SPECIALIST;
+        if (this.points >= 20) return PointInfo.COMBAT_CADET;
+        if (this.points >= 10) return PointInfo.COMBAT_NOVICE;
+        if (this.points >= 1) return PointInfo.ROOKIE;
+        return PointInfo.UNRANKED;
     }
 
     public List<NamedRanking> getSortedTiers() {
-        List<NamedRanking> tiers = new ArrayList<>(this.rankings.entrySet().stream()
-                .map(e -> e.getValue().asNamed(TierCache.findModeOrUgly(e.getKey())))
-                .toList());
+        List<NamedRanking> tiers = new ArrayList<>(
+                this.rankings.entrySet().stream()
+                        .map(e -> e.getValue().asNamed(TierCache.findModeOrUgly(e.getKey())))
+                        .toList()
+        );
 
-        tiers.sort(Comparator.comparing((NamedRanking a) -> a.ranking.retired, Boolean::compare)
+        tiers.sort(Comparator
+                .comparing((NamedRanking a) -> a.ranking.retired, Boolean::compare)
                 .thenComparingInt(a -> a.ranking.tier)
-                .thenComparingInt(a -> a.ranking.pos));
+                .thenComparingInt(a -> a.ranking.pos)
+        );
 
         return tiers;
     }
