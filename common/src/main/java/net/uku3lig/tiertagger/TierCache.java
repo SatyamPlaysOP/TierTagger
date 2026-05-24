@@ -8,21 +8,43 @@ import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
 import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.*;
 
 public class TierCache {
 
     private static final List<GameMode> GAMEMODES = new ArrayList<>();
     private static final Map<UUID, Optional<Map<String, PlayerInfo.Ranking>>> TIERS = new ConcurrentHashMap<>();
 
+    // 🔥 Auto refresh scheduler
+    private static final ScheduledExecutorService REFRESHER =
+            Executors.newSingleThreadScheduledExecutor();
+
     public static void init() {
         GAMEMODES.clear();
 
-        // ✅ USE PRIME TIERS GAME MODES
         GAMEMODES.addAll(GameMode.fetchFromPrimeTiers());
 
         TierTagger.getLogger().info("Loaded PrimeTiers gamemodes: {}", GAMEMODES.size());
+    }
+
+    public static void startAutoRefresh() {
+        REFRESHER.scheduleAtFixedRate(() -> {
+            try {
+                // Copy keys to avoid concurrent modification issues
+                Set<UUID> keys = new HashSet<>(TIERS.keySet());
+
+                for (UUID uuid : keys) {
+                    // Re-fetch cached players
+                    searchPlayer(uuid.toString())
+                            .exceptionally(e -> null);
+                }
+
+                TierTagger.getLogger().info("TierCache auto-refresh completed");
+
+            } catch (Exception e) {
+                TierTagger.getLogger().warn("Auto-refresh failed", e);
+            }
+        }, 5, 5, TimeUnit.MINUTES);
     }
 
     public static List<GameMode> getGamemodes() {
@@ -46,7 +68,6 @@ public class TierCache {
 
                 Map<String, PlayerInfo.Ranking> rankings = new HashMap<>();
 
-                // ⚠️ YOU MUST CONFIRM SELECTORS FROM YOUR WEBSITE
                 Elements cards = doc.select(".ranking-card");
 
                 for (Element card : cards) {
@@ -89,11 +110,11 @@ public class TierCache {
             int tier = 10;
             int pos = 0;
 
-            // safer parsing (handles "T1", "1", "1.2", etc.)
             String digits = text.replaceAll("[^0-9]", "");
 
             if (!digits.isEmpty()) {
                 tier = Character.getNumericValue(digits.charAt(0));
+
                 if (digits.length() > 1) {
                     pos = Character.getNumericValue(digits.charAt(1));
                 }
