@@ -34,40 +34,57 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 public class TierTagger {
+
     public static final String MOD_ID = "tiertagger";
-    private static final String UPDATE_URL_FORMAT = "https://api.modrinth.com/v2/project/dpkYdLu5/version?game_versions=%s";
+    private static final String UPDATE_URL_FORMAT =
+            "https://api.modrinth.com/v2/project/dpkYdLu5/version?game_versions=%s";
 
     public static final Gson GSON = new GsonBuilder().create();
 
     @Getter
-    private static final ConfigManager<TierTaggerConfig> manager = ConfigManager.createDefault(TierTaggerConfig.class, MOD_ID);
+    private static final ConfigManager<TierTaggerConfig> manager =
+            ConfigManager.createDefault(TierTaggerConfig.class, MOD_ID);
+
     @Getter
     private static final Logger logger = LoggerFactory.getLogger(TierTagger.class);
+
     @Getter
     private static final HttpClient client = HttpClient.newHttpClient();
 
-    // === version checker stuff ===
     @Getter
     private static Version latestVersion = null;
+
     @Getter
     private static Version currentVersion;
+
     private static final AtomicBoolean isObsolete = new AtomicBoolean(false);
 
     public static void onInitialize(Version currentVer) {
         currentVersion = currentVer;
 
+        // ✅ PrimeTiers cache init (no API anymore)
         TierCache.init();
 
-        Ukutils.registerKeybinding(new KeyMapping("tiertagger.keybind.gamemode", GLFW.GLFW_KEY_UNKNOWN, KeyMapping.Category.register(Identifier.fromNamespaceAndPath("tiertagger", "key"))),
+        Ukutils.registerKeybinding(
+                new KeyMapping(
+                        "tiertagger.keybind.gamemode",
+                        GLFW.GLFW_KEY_UNKNOWN,
+                        KeyMapping.Category.register(
+                                Identifier.fromNamespaceAndPath("tiertagger", "key")
+                        )
+                ),
                 mc -> {
                     GameMode next = TierCache.findNextMode(manager.getConfig().getGameMode());
                     manager.getConfig().setGameMode(next.id());
 
                     if (mc.player != null) {
-                        Component message = Component.literal("Displayed gamemode: ").append(next.asStyled(false));
-                        mc.player.sendOverlayMessage(message);
+                        Component message = Component.literal("Displayed gamemode: ")
+                                .append(next.asStyled(false));
+
+                        mc.player.sendSystemMessage(message);
                     }
-                });
+                }
+        );
 
         checkForUpdates();
     }
@@ -77,8 +94,12 @@ public class TierTagger {
                 .map(entry -> {
                     Component tierText = getRankingText(entry.ranking(), false);
 
-                    if (manager.getConfig().isShowIcons() && entry.mode() != null && entry.mode().icon().isPresent()) {
-                        return Component.literal(entry.mode().icon().get().toString()).append(tierText);
+                    if (manager.getConfig().isShowIcons()
+                            && entry.mode() != null
+                            && entry.mode().icon().isPresent()) {
+
+                        return Component.literal(entry.mode().icon().get().toString())
+                                .append(tierText);
                     } else {
                         return tierText.copy();
                     }
@@ -99,99 +120,124 @@ public class TierTagger {
         return TierCache.getPlayerRankings(uuid)
                 .map(rankings -> {
                     PlayerInfo.Ranking ranking = rankings.get(mode.id());
-                    Optional<PlayerInfo.NamedRanking> highest = PlayerInfo.getHighestRanking(rankings);
-                    TierTaggerConfig.HighestMode highestMode = manager.getConfig().getHighestMode();
+                    Optional<PlayerInfo.NamedRanking> highest =
+                            PlayerInfo.getHighestRanking(rankings);
+
+                    TierTaggerConfig.HighestMode highestMode =
+                            manager.getConfig().getHighestMode();
 
                     if (ranking == null) {
                         if (highestMode != TierTaggerConfig.HighestMode.NEVER && highest.isPresent()) {
                             return highest.get();
-                        } else {
-                            return null;
                         }
-                    } else {
-                        if (highestMode == TierTaggerConfig.HighestMode.ALWAYS && highest.isPresent()) {
-                            return highest.get();
-                        } else {
-                            return ranking.asNamed(mode);
-                        }
+                        return null;
                     }
+
+                    if (highestMode == TierTaggerConfig.HighestMode.ALWAYS && highest.isPresent()) {
+                        return highest.get();
+                    }
+
+                    return ranking.asNamed(mode);
                 });
     }
 
     private static MutableComponent getTierText(int tier, int pos, boolean retired) {
         StringBuilder text = new StringBuilder();
+
         if (retired) text.append("R");
         text.append(pos == 0 ? "H" : "L").append("T").append(tier);
 
-        int color = TierTagger.getTierColor(text.toString());
-        return Component.literal(text.toString()).withStyle(s -> s.withColor(color));
+        int color = getTierColor(text.toString());
+
+        return Component.literal(text.toString())
+                .withStyle(s -> s.withColor(color));
     }
 
     public static Component getRankingText(PlayerInfo.Ranking ranking, boolean showPeak) {
-        if (ranking.retired() && ranking.peakTier() != null && ranking.peakPos() != null) {
-            return getTierText(ranking.peakTier(), ranking.peakPos(), true);
-        } else {
-            MutableComponent tierText = getTierText(ranking.tier(), ranking.pos(), false);
+        if (ranking.retired()
+                && ranking.peakTier() != null
+                && ranking.peakPos() != null) {
 
-            if (showPeak && ranking.comparablePeak() < ranking.comparableTier()) {
-                // warning caused by potential NPE by unboxing of peak{Tier,Pos} which CANNOT happen, see impl of comparablePeak
-                // noinspection DataFlowIssue
-                tierText.append(Component.literal(" (peak: ").withStyle(s -> s.withColor(ChatFormatting.GRAY)))
-                        .append(getTierText(ranking.peakTier(), ranking.peakPos(), false))
-                        .append(Component.literal(")").withStyle(s -> s.withColor(ChatFormatting.GRAY)));
-            }
-
-            return tierText;
+            return getTierText(
+                    ranking.peakTier(),
+                    ranking.peakPos(),
+                    true
+            );
         }
+
+        MutableComponent tierText =
+                getTierText(ranking.tier(), ranking.pos(), false);
+
+        if (showPeak
+                && ranking.comparablePeak() < ranking.comparableTier()
+                && ranking.peakTier() != null
+                && ranking.peakPos() != null) {
+
+            tierText.append(Component.literal(" (peak: ")
+                    .withStyle(s -> s.withColor(ChatFormatting.GRAY)))
+                    .append(getTierText(
+                            ranking.peakTier(),
+                            ranking.peakPos(),
+                            false
+                    ))
+                    .append(Component.literal(")")
+                            .withStyle(s -> s.withColor(ChatFormatting.GRAY)));
+        }
+
+        return tierText;
     }
 
     public static int getTierColor(String tier) {
         if (tier.startsWith("R")) {
             return manager.getConfig().getRetiredColor();
-        } else {
-            return manager.getConfig().getTierColors().getOrDefault(tier, 0xD3D3D3);
         }
+
+        return manager.getConfig()
+                .getTierColors()
+                .getOrDefault(tier, 0xD3D3D3);
     }
 
     private static void checkForUpdates() {
-        String versionParam = "[\"%s\"]".formatted(SharedConstants.getCurrentVersion().name());
-        String fullUrl = UPDATE_URL_FORMAT.formatted(URLEncoder.encode(versionParam, StandardCharsets.UTF_8));
+        String versionParam =
+                "[\"%s\"]".formatted(SharedConstants.getCurrentVersion().name());
 
-        HttpRequest request = HttpRequest.newBuilder(URI.create(fullUrl)).GET().build();
+        String fullUrl =
+                UPDATE_URL_FORMAT.formatted(
+                        URLEncoder.encode(versionParam, StandardCharsets.UTF_8)
+                );
+
+        HttpRequest request =
+                HttpRequest.newBuilder(URI.create(fullUrl)).GET().build();
 
         client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenApply(r -> {
-                    String body = r.body();
-                    JsonArray array = GSON.fromJson(body, JsonArray.class);
+                    JsonArray array = GSON.fromJson(r.body(), JsonArray.class);
 
                     if (!array.isEmpty()) {
                         JsonObject root = array.get(0).getAsJsonObject();
 
-                        String versionName = root.get("name").getAsString();
-                        if (versionName != null && versionName.toLowerCase(Locale.ROOT).startsWith("[o")) {
-                            isObsolete.set(true);
-                        }
-
                         String latestVer = root.get("version_number").getAsString();
+
                         try {
                             return Version.parse(latestVer);
                         } catch (ParseException e) {
-                            logger.warn("Could not parse version number {}", latestVer);
+                            logger.warn("Could not parse version {}", latestVer);
                         }
                     }
 
                     return null;
                 })
-                .exceptionally(t -> {
-                    logger.warn("Error checking for updates", t);
+                .exceptionally(e -> {
+                    logger.warn("Update check failed", e);
                     return null;
-                }).thenAccept(v -> {
-                    logger.info("Found latest version {}", v);
+                })
+                .thenAccept(v -> {
                     latestVersion = v;
+                    logger.info("Latest version: {}", v);
                 });
     }
 
     public static boolean isObsolete() {
         return isObsolete.get();
     }
-}
+    }
