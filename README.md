@@ -18,13 +18,12 @@ https://adoptium.net/temurin/releases/
 During install:
 ✔ Check “Add to PATH”
 
----
 
 ## 🟡 2. Verify Java
 
 Open **Command Prompt (CMD)** and run:
 
-```bash
+bash
 java -version
 
 If installed correctly, you will see something like:
