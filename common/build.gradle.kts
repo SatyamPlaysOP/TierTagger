@@ -6,6 +6,10 @@ plugins {
     id("io.freefair.lombok") version "9.2.0"
 }
 
+repositories {
+    mavenCentral()
+}
+
 dependencies {
     minecraft("com.mojang:minecraft:${BuildConfig.MINECRAFT_VERSION}")
 
@@ -15,6 +19,8 @@ dependencies {
     compileOnly("net.fabricmc:sponge-mixin:0.17.0+mixin.0.8.7")
     compileOnly("io.github.llamalad7:mixinextras-common:0.5.1")
     annotationProcessor("io.github.llamalad7:mixinextras-common:0.5.1")
+
+    implementation("org.jsoup:jsoup:1.17.2")
 }
 
 tasks.jar { enabled = false }
