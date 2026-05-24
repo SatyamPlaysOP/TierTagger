@@ -2,6 +2,10 @@ package net.uku3lig.tiertagger;
 
 import net.uku3lig.tiertagger.model.GameMode;
 import net.uku3lig.tiertagger.model.PlayerInfo;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
@@ -13,15 +17,16 @@ public class TierCache {
     private static final Map<UUID, Optional<Map<String, PlayerInfo.Ranking>>> TIERS = new ConcurrentHashMap<>();
 
     public static void init() {
-        try {
-            GAMEMODES.clear();
-            GAMEMODES.addAll(GameMode.fetchGamemodes(TierTagger.getClient()).get());
-            TierTagger.getLogger().info("Found {} tierlists: {}", GAMEMODES.size(), GAMEMODES.stream().map(GameMode::id).toList());
-        } catch (ExecutionException e) {
-            TierTagger.getLogger().error("Failed to load gamemodes!", e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-        }
+        GAMEMODES.clear();
+
+        // Custom PrimeTiers gamemodes
+        GAMEMODES.add(new GameMode("nodebuff", "Nodebuff"));
+        GAMEMODES.add(new GameMode("uhc", "UHC"));
+        GAMEMODES.add(new GameMode("sword", "Sword"));
+        GAMEMODES.add(new GameMode("axe", "Axe"));
+        GAMEMODES.add(new GameMode("crystal", "Crystal"));
+
+        TierTagger.getLogger().info("Loaded PrimeTiers gamemodes!");
     }
 
     public static List<GameMode> getGamemodes() {
@@ -33,21 +38,52 @@ public class TierCache {
     }
 
     public static Optional<Map<String, PlayerInfo.Ranking>> getPlayerRankings(UUID uuid) {
-        return TIERS.computeIfAbsent(uuid, _ -> {
-            if (uuid.version() == 4) {
-                PlayerInfo.getRankings(TierTagger.getClient(), uuid).thenAccept(info -> TIERS.put(uuid, Optional.ofNullable(info)));
-            }
+        return TIERS.getOrDefault(uuid, Optional.empty());
+    }
 
-            return Optional.empty();
+    public static CompletableFuture<PlayerInfo> searchPlayer(String username) {
+        return CompletableFuture.supplyAsync(() -> {
+            try {
+                Document doc = Jsoup.connect(
+                        "https://primetiers.qzz.io/player/" + username)
+                        .userAgent("Mozilla/5.0")
+                        .get();
+
+                Map<String, PlayerInfo.Ranking> rankings = new HashMap<>();
+
+                // CHANGE THESE SELECTORS TO MATCH YOUR WEBSITE HTML
+                Elements cards = doc.select(".ranking-card");
+
+                for (Element card : cards) {
+                    String mode = card.select(".mode-name").text();
+                    String tier = card.select(".tier-value").text();
+
+                    if (!mode.isEmpty() && !tier.isEmpty()) {
+                        rankings.put(mode.toLowerCase(), parseRanking(tier));
+                    }
+                }
+
+                UUID uuid = UUID.nameUUIDFromBytes(username.getBytes());
+
+                PlayerInfo info = new PlayerInfo(
+                        uuid.toString(),
+                        username,
+                        rankings
+                );
+
+                TIERS.put(uuid, Optional.of(rankings));
+
+                return info;
+
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to fetch PrimeTiers player data", e);
+            }
         });
     }
 
-    public static CompletableFuture<PlayerInfo> searchPlayer(String query) {
-        return PlayerInfo.search(TierTagger.getClient(), query).thenApply(p -> {
-            UUID uuid = parseUUID(p.uuid());
-            TIERS.put(uuid, Optional.of(p.rankings()));
-            return p;
-        });
+    private static PlayerInfo.Ranking parseRanking(String tierText) {
+        // Adjust this constructor if your Ranking class is different
+        return new PlayerInfo.Ranking(tierText, 0, false);
     }
 
     public static void clearCache() {
