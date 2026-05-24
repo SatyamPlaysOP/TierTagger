@@ -10,7 +10,6 @@ import org.jsoup.select.Elements;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutionException;
 
 public class TierCache {
     private static final List<GameMode> GAMEMODES = new ArrayList<>();
@@ -19,7 +18,6 @@ public class TierCache {
     public static void init() {
         GAMEMODES.clear();
 
-        // Custom PrimeTiers gamemodes
         GAMEMODES.add(new GameMode("nodebuff", "Nodebuff"));
         GAMEMODES.add(new GameMode("uhc", "UHC"));
         GAMEMODES.add(new GameMode("sword", "Sword"));
@@ -45,13 +43,13 @@ public class TierCache {
         return CompletableFuture.supplyAsync(() -> {
             try {
                 Document doc = Jsoup.connect(
-                        "https://primetiers.qzz.io/player/" + username)
+                                "https://primetiers.qzz.io/player/" + username)
                         .userAgent("Mozilla/5.0")
                         .get();
 
                 Map<String, PlayerInfo.Ranking> rankings = new HashMap<>();
 
-                // CHANGE THESE SELECTORS TO MATCH YOUR WEBSITE HTML
+                // Replace selectors with real website classes
                 Elements cards = doc.select(".ranking-card");
 
                 for (Element card : cards) {
@@ -68,7 +66,12 @@ public class TierCache {
                 PlayerInfo info = new PlayerInfo(
                         uuid.toString(),
                         username,
-                        rankings
+                        rankings,
+                        "AS",
+                        0,
+                        0,
+                        new ArrayList<>(),
+                        false
                 );
 
                 TIERS.put(uuid, Optional.of(rankings));
@@ -82,8 +85,48 @@ public class TierCache {
     }
 
     private static PlayerInfo.Ranking parseRanking(String tierText) {
-        // Adjust this constructor if your Ranking class is different
-        return new PlayerInfo.Ranking(tierText, 0, false);
+        try {
+            tierText = tierText.toUpperCase()
+                    .replace("HT", "")
+                    .replace("LT", "")
+                    .replace("TIER", "")
+                    .trim();
+
+            int tier = 10;
+
+            if (!tierText.isEmpty()) {
+                tier = Integer.parseInt(tierText.substring(0, 1));
+            }
+
+            int pos = 0;
+
+            if (tierText.length() > 1) {
+                char c = tierText.charAt(1);
+
+                if (Character.isDigit(c)) {
+                    pos = Character.getNumericValue(c);
+                }
+            }
+
+            return new PlayerInfo.Ranking(
+                    tier,
+                    pos,
+                    null,
+                    null,
+                    System.currentTimeMillis(),
+                    false
+            );
+
+        } catch (Exception e) {
+            return new PlayerInfo.Ranking(
+                    10,
+                    0,
+                    null,
+                    null,
+                    System.currentTimeMillis(),
+                    false
+            );
+        }
     }
 
     public static void clearCache() {
@@ -99,21 +142,13 @@ public class TierCache {
     }
 
     public static Optional<GameMode> findMode(String id) {
-        return GAMEMODES.stream().filter(m -> m.id().equalsIgnoreCase(id)).findFirst();
+        return GAMEMODES.stream()
+                .filter(m -> m.id().equalsIgnoreCase(id))
+                .findFirst();
     }
 
     public static GameMode findModeOrUgly(String id) {
         return findMode(id).orElseGet(() -> new GameMode(id, id));
-    }
-
-    private static UUID parseUUID(String uuid) {
-        try {
-            return UUID.fromString(uuid);
-        } catch (Exception e) {
-            long mostSignificant = Long.parseUnsignedLong(uuid.substring(0, 16), 16);
-            long leastSignificant = Long.parseUnsignedLong(uuid.substring(16), 16);
-            return new UUID(mostSignificant, leastSignificant);
-        }
     }
 
     private TierCache() {
