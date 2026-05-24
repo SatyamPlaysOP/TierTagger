@@ -2,9 +2,11 @@
   "schemaVersion": 1,
   "id": "tiertagger",
   "version": "${version}",
-  "name": "TierTagger",
-  "description": "Display player's PvP Tiers in their nametag!",
-  "authors": ["uku", "netiyiy (original creator)"],
+  "name": "PrimeTiers Overlay",
+  "description": "Displays live PrimeTiers PvP rankings in Minecraft with auto-refreshing tier data and gamemode support.",
+  "authors": [
+    "Rekaixp"
+  ],
   "contact": {
     "sources": "https://github.com/mctiers-dev/TierTagger.git"
   },
